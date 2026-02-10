@@ -1,217 +1,384 @@
 # CLAUDE.md
 
-This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+This file provides guidance to Claude Code when working with code in this repository.
+
+## CRITICAL: Direct Action - No Exploration Required
+
+**When asked to use the mailer tool, ACT IMMEDIATELY. Do not:**
+- ❌ Say "let me check the mailer tool's capabilities"
+- ❌ Say "let me first understand the structure"
+- ❌ Read source files before running commands
+- ❌ Read SKILL.md or CLAUDE.md before acting
+
+**Instead, JUST USE the CLI directly:**
+```bash
+# Most common commands (in order of usefulness)
+mailer inbox                              # See recent inbox (20 emails)
+mailer inbox --unread                     # Only unread emails
+mailer search "from:fnb subject:payment"  # Gmail query search
+mailer show <message_id>                  # View full email
+mailer send to@email.com "Subject" "Body" # Send email
+mailer list --from @company.com           # List emails from domain
+mailer download <message_id>              # Download attachments
+
+# Database operations (for local search after syncing)
+mailer db search "keyword"                # Full-text search in SQLite
+mailer db stats                           # View database statistics
+```
+
+**Gmail search syntax** (used with `search` and `list` commands):
+- `from:sender@domain.com` - From sender
+- `subject:keyword` - Subject contains
+- `is:unread` - Unread only
+- `has:attachment` - Has attachments
+- `after:2024/01/01` - Date filter
+- Combine: `from:fnb subject:payment has:attachment`
+
+**Authentication:** Automatic via `~/.mailer/token.json`. First run triggers OAuth flow.
+
+---
 
 ## Project Overview
 
-This is a Python library designed to provide reusable code for AI agents to create, read, and interact with Gmail. The library follows functional programming principles and is modular and easy to integrate into other AI-powered tools.
+A Python library and CLI for AI agents to interact with Gmail. Features local caching, SQLite storage with full-text search, and incremental sync.
 
-## Development Commands
+## Claude Code Skills
 
-### Package Management
-- Install dependencies: `uv sync` or `pip install -e .`
-- Add a new dependency: `uv add <package>` (recommended) or manually edit `pyproject.toml`
+This project ships with Claude Code skills in `.claude/skills/` that help AI agents use the mailer CLI effectively with minimal back-and-forth. Skills are automatically available when Claude Code runs in this project directory.
 
-### Testing
-- Run all tests: `pytest`
-- Run a single test file: `pytest tests/test_<name>.py`
-- Run a specific test: `pytest tests/test_<name>.py::test_function_name`
-- Run with coverage: `pytest --cov=. --cov-report=html`
+### Available Skills
 
-### Code Quality
-- Format code: `ruff format .`
-- Lint code: `ruff check .`
-- Fix auto-fixable lint issues: `ruff check --fix .`
-- Type checking: `mypy .`
+| Skill | Purpose | When It Activates |
+|-------|---------|-------------------|
+| **mailer-cli** | Complete CLI reference with commands, Gmail search syntax, workflows | "check email", "search inbox", "send email", "download attachments" |
+
+### Skill Structure
+
+```
+.claude/skills/
+└── mailer-cli/
+    ├── SKILL.md                   # Main skill with quick reference
+    └── references/
+        └── cli-reference.md       # Complete command reference
+```
+
+### How Users Get Skills
+
+Skills are part of the repository. When a user clones the project and opens it with Claude Code, the skills are automatically loaded from `.claude/skills/`. No manual installation needed.
+
+## Skill
+
+Use `mailer-codebase-understanding` when reasoning about architecture, implementing features, or debugging.
+
+## Quick Reference
+
+```bash
+# Development
+uv sync                    # Install dependencies
+uv run pytest             # Run tests
+uv run ruff format .      # Format code
+uv run ruff check .       # Lint
+uv run mypy .             # Type check
+
+# CLI Usage (most useful first)
+mailer inbox                      # Recent inbox emails
+mailer inbox --unread -n 50       # 50 unread emails
+mailer search "from:boss"         # Search with Gmail syntax
+mailer show MESSAGE_ID            # View full email
+mailer list --from @domain.com    # List emails from domain
+mailer send to@x.com "Subj" "Msg" # Send email
+mailer download MESSAGE_ID        # Download attachments
+mailer export "@domain.com"       # Export to ~/.mailer/exports/
+mailer db search "keyword"        # Full-text search in database
+```
+
+## Current Implementation Status
+
+### ✅ Fully Implemented
+| Module | Functions |
+|--------|-----------|
+| `auth.py` | `create_service`, `create_credentials`, `create_service_from_env` |
+| `messages.py` | `send_message`, `list_messages`, `list_message_ids`, `get_message`, `delete_message`, `download_attachment` |
+| `threads.py` | `list_thread_ids`, `list_threads`, `get_thread`, `get_thread_messages`, `search_threads` |
+| `parsing.py` | `parse_raw_email`, `parse_gmail_payload`, `extract_latest_reply` |
+| `labels.py` | `list_labels`, `get_label`, `create_label`, `update_label`, `delete_label`, `apply_label`, `remove_label`, `get_label_by_name`, `get_or_create_label` |
+| `drafts.py` | `list_drafts`, `list_draft_ids`, `get_draft`, `create_draft`, `update_draft`, `send_draft`, `delete_draft` |
+| `attachments.py` | `download_attachment_to_file`, `download_all_attachments`, `get_attachment_content`, `get_attachment_size` |
+| `storage.py` | `EmailStorage` class for local JSON caching |
+| `database.py` | SQLite with FTS5, `create_database`, `insert_emails`, `search_emails`, `get_stats` |
+| `cli.py` | Full CLI with `inbox`, `search`, `show`, `send`, `list`, `download`, `get`, `export`, `db`, `labels`, `drafts`, `analyze` commands |
+| `types.py` | `GmailMessage`, `GmailAttachment`, `GmailThread`, `GmailLabel`, `GmailDraft`, `ParsedEmail`, `ParsedAttachment` models |
+
+### Key Data Flow
+
+```
+Gmail API
+    ↓
+messages.py (fetch with pagination)
+    ↓
+storage.py (JSON cache in ~/.mailer/emails/)
+    ↓
+database.py (SQLite in ~/.mailer/emails.db)
+    ↓
+cli.py (user interface)
+```
 
 ## Architecture
 
-### Core Design Principles
-
-#### Single Responsibility Principle (SRP)
-- **One Function, One Job**: Each function must do exactly one thing and do it well
-- **One Module, One Domain**: Each module should handle one Gmail domain (e.g., `messages.py` for all message operations)
-- **No God Objects**: Avoid classes or modules that do too many things
-- **Clear Boundaries**: Functions should have clear inputs and outputs with no hidden dependencies
-
-#### Functional Programming Principles
-- **Pure Functions**: Functions should be pure whenever possible (same input → same output, no side effects)
-- **Immutability**: Prefer immutable data structures; avoid modifying inputs
-- **Composition**: Build complex operations by composing simple functions
-- **Explicit Dependencies**: All dependencies (API clients, configs) must be passed as parameters, not global state
-- **Avoid Classes**: Prefer functions over classes unless the class provides clear value (e.g., data models)
-- **Type Safety**: All functions must have complete type hints (parameters and return values)
-
-#### Structure
-- **Flat Architecture**: Use a flat module structure - no nested directories
-- **Domain Modules**: One file per Gmail domain (e.g., `auth.py`, `messages.py`, `labels.py`, `threads.py`)
-- **Small, Focused Functions**: Functions should be small (ideally < 20 lines) and do one thing
-- **AI-Agent First**: All interfaces should be simple and intuitive for AI agents to use programmatically
-- **Error Handling**: Return explicit Result types or raise clear exceptions that AI agents can parse
-
-### Expected Flat Structure
 ```
 mailer/
 ├── __init__.py         # Public API exports
-├── auth.py             # Authentication and credential management
-├── messages.py         # Message operations (send, read, delete, modify)
-├── labels.py           # Label operations (create, list, apply, remove)
-├── threads.py          # Thread operations (list, read, modify)
-├── drafts.py           # Draft operations (create, update, send, delete)
-├── attachments.py      # Attachment operations (upload, download)
-├── search.py           # Search and filter operations
-├── types.py            # Shared type definitions and Pydantic models
-└── errors.py           # Error types and handling utilities
+├── cli.py              # Click CLI (main entry point)
+├── auth.py             # OAuth 2.0 authentication
+├── messages.py         # Core Gmail operations
+│   ├── send_message()
+│   ├── list_message_ids()  # Pagination support
+│   ├── list_messages()     # Full content fetch
+│   ├── get_message()       # Single message with body + attachments
+│   └── download_attachment()
+├── threads.py          # Thread/conversation operations
+│   ├── list_thread_ids()   # Pagination support
+│   ├── list_threads()      # Full content fetch
+│   ├── get_thread()        # Single thread with all messages
+│   ├── get_thread_messages()  # Convenience for just messages
+│   └── search_threads()    # Gmail query search
+├── parsing.py          # Email parsing utilities
+│   ├── parse_raw_email()   # Parse RFC 5322 bytes
+│   ├── parse_gmail_payload()  # Parse Gmail API payload
+│   └── extract_latest_reply()  # Strip quoted text from replies
+├── labels.py           # Label management
+│   ├── list_labels(), get_label()
+│   ├── create_label(), update_label(), delete_label()
+│   ├── apply_label(), remove_label()
+│   └── get_label_by_name(), get_or_create_label()
+├── drafts.py           # Draft management
+│   ├── list_drafts(), list_draft_ids(), get_draft()
+│   ├── create_draft(), update_draft()
+│   ├── send_draft(), delete_draft()
+├── attachments.py      # File-based attachment operations
+│   ├── download_attachment_to_file()
+│   ├── download_all_attachments()
+│   └── get_attachment_content(), get_attachment_size()
+├── storage.py          # Local JSON file caching
+│   └── EmailStorage    # Index + messages/ directory
+├── database.py         # SQLite + FTS5
+│   ├── create_database()
+│   ├── insert_email()
+│   ├── search_emails()
+│   └── get_stats()
+├── types.py            # Pydantic models
+│   ├── GmailMessage    # Full message with computed properties
+│   ├── GmailAttachment # Attachment metadata
+│   ├── GmailThread     # Thread with messages
+│   ├── ParsedEmail     # Parser output model
+│   └── ParsedAttachment  # Parser attachment model
+├── errors.py           # Exception hierarchy
+└── formatters.py       # Output formatting utilities
 ```
 
-### Anti-Patterns to Avoid
-- ❌ Nested directory structures (`mailer/messages/send.py`)
-- ❌ Classes with multiple methods doing different things
-- ❌ Functions with side effects hidden from the signature
-- ❌ Mutable global state or singletons
-- ❌ Functions that do more than one thing
-- ❌ Missing type hints
-- ❌ Functions longer than 30 lines (usually indicates multiple responsibilities)
+## Key Design Decisions
 
-## Gmail API Patterns
+### 1. Two-Layer Caching
 
-### Authentication
-Gmail API uses OAuth 2.0 with credential files and tokens:
-- `credentials.json` - OAuth client configuration (downloaded from Google Cloud Console)
-- `token.json` - User authorization token (generated on first auth, refreshed automatically)
+**JSON Cache (`~/.mailer/emails/{pattern}/`)**
+- Individual JSON files per message
+- Fast lookup by message ID
+- Organized by sender pattern
+- Used for incremental sync
 
-**Environment variables:**
-- `GMAIL_CREDENTIALS_FILE` - Path to credentials.json (default: `./credentials.json`)
-- `GMAIL_TOKEN_FILE` - Path to token.json (default: `./token.json`)
-- `GMAIL_SCOPES` - Comma-separated list of OAuth scopes (default: Gmail read/write)
+**SQLite Database (`~/.mailer/emails.db`)**
+- Full-text search (FTS5)
+- Aggregation queries
+- Attachment tracking
+- Single file, portable
 
-### Gmail API Service
-All Gmail operations require an authenticated service object:
+### 2. Pagination Handling
+
+Gmail API returns max 500 messages per request. `list_message_ids()` handles this:
+
 ```python
-from googleapiclient.discovery import build
-
-def create_service(credentials):
-    """Create Gmail API service from credentials."""
-    return build('gmail', 'v1', credentials=credentials)
+def list_message_ids(service, max_results=100, query=None) -> list[str]:
+    all_ids = []
+    page_token = None
+    while True:
+        results = service.users().messages().list(
+            userId="me", maxResults=min(max_results, 500),
+            q=query, pageToken=page_token
+        ).execute()
+        all_ids.extend(msg["id"] for msg in results.get("messages", []))
+        page_token = results.get("nextPageToken")
+        if not page_token or (max_results > 0 and len(all_ids) >= max_results):
+            break
+    return all_ids[:max_results] if max_results > 0 else all_ids
 ```
 
-### Message Format
-Gmail uses a unique message format with base64url-encoded content:
-- Messages have IDs and thread IDs
-- Message bodies are base64url-encoded
-- Attachments are separate parts with their own encoding
-- Labels are applied as arrays of label IDs
+### 3. Body Extraction
 
-## Code Examples
+Gmail messages have complex MIME structures. `_find_body_part()` recursively searches:
 
-### ✅ Good: Single Responsibility + Functional
+```
+multipart/mixed
+├── multipart/related
+│   ├── multipart/alternative
+│   │   ├── text/plain     ← Preferred
+│   │   └── text/html      ← Fallback (converted to text)
+│   └── image/jpeg (inline)
+└── application/pdf (attachment)
+```
+
+### 4. Attachment Handling
+
+Attachments are NOT downloaded by default (bandwidth). Only metadata is extracted:
+
 ```python
-from googleapiclient.discovery import Resource
-from typing import Optional
-
-def send_message(
-    service: Resource,
-    to: str,
-    subject: str,
-    body: str,
-    from_email: Optional[str] = None
-) -> dict:
-    """Send an email message. One function, one job."""
-    message = create_mime_message(to, subject, body, from_email)
-    encoded_message = encode_message(message)
-    result = service.users().messages().send(
-        userId='me',
-        body={'raw': encoded_message}
-    ).execute()
-    return result
-
-def create_mime_message(to: str, subject: str, body: str, from_email: Optional[str] = None) -> str:
-    """Create MIME message. Separate function for separate responsibility."""
-    # MIME message creation logic
-    ...
-
-def encode_message(message: str) -> str:
-    """Encode message to base64url format."""
-    return base64.urlsafe_b64encode(message.encode()).decode()
+class GmailAttachment:
+    attachment_id: str    # For download API
+    message_id: str       # Parent message
+    filename: str
+    mime_type: str
+    size: int
 ```
 
-### ❌ Bad: Multiple Responsibilities + Stateful
+Download on demand:
 ```python
-class EmailManager:
-    def __init__(self, credentials_file: str):
-        self.service = self._create_service(credentials_file)  # Hidden state
-        self.last_message = None  # Mutable state
-
-    def send_and_archive(self, to: str, subject: str, body: str):
-        # Does two things! Should be two separate functions
-        msg = self._send(to, subject, body)
-        self.last_message = msg  # Side effect
-        self._archive(msg['id'])
-        return msg
+data = download_attachment(service, message_id, attachment_id)
 ```
 
-### Function Composition Example
+### 5. Export Directory
+
+Files go to `~/.mailer/exports/` by default, not current directory:
+- Auto-generated names: `{pattern}_{date}.json`
+- Custom names: `-o filename.json`
+
+## CLI Command Structure
+
+Commands are ordered by usefulness (most common first):
+
+```
+mailer
+├── inbox                    # Recent inbox emails (most useful!)
+├── search QUERY             # Gmail API search
+├── show MESSAGE_ID          # View full email
+├── send TO SUBJECT BODY     # Send email
+├── list [QUERY]             # List emails with filtering
+├── download MESSAGE_ID      # Download attachments
+├── get emails [PATTERN]     # Fetch with caching (legacy)
+├── sync PATTERN             # Incremental sync
+├── status                   # Cache status
+├── export PATTERN           # Export to ~/.mailer/exports/
+├── db                       # Database operations
+│   ├── search QUERY         # FTS5 full-text search
+│   ├── stats                # Database statistics
+│   ├── import SOURCE        # Import JSON/cache to SQLite
+│   ├── import-all           # Import all cached emails
+│   ├── query SQL            # Raw SQL
+│   ├── refresh [IDS]        # Re-fetch emails
+│   └── attachments          # List attachments
+├── labels                   # Label management
+│   ├── list                 # List all labels
+│   ├── create NAME          # Create label
+│   ├── delete LABEL_ID      # Delete label
+│   ├── apply MSG_ID LABEL   # Apply label to message
+│   └── remove MSG_ID LABEL  # Remove label from message
+├── drafts                   # Draft management
+│   ├── list                 # List drafts
+│   ├── show DRAFT_ID        # View draft
+│   ├── create TO SUBJ BODY  # Create draft
+│   ├── send DRAFT_ID        # Send draft
+│   └── delete DRAFT_ID      # Delete draft
+└── analyze                  # Email analysis
+    ├── sender-stats         # Top senders
+    ├── domain-stats         # Emails by domain
+    └── timeline             # Volume over time
+```
+
+## Pydantic Models
+
+### GmailMessage
+
 ```python
-from typing import Callable
-from functools import partial
+class GmailMessage(BaseModel):
+    id: str
+    thread_id: str
+    label_ids: list[str]
+    snippet: str
+    from_email: str           # "Name <email>"
+    to: list[str]
+    cc: list[str]
+    subject: str
+    body: str                 # Plain text
+    body_html: str            # HTML version
+    date: str                 # RFC 2822
+    timestamp: int            # Unix ms (from internalDate)
+    attachments: list[GmailAttachment]
+    size_estimate: int
 
-# Small, focused functions
-def create_credentials(credentials_file: str, token_file: str, scopes: list[str]):
-    """Create Gmail credentials. One job."""
-    # OAuth flow logic
-    ...
-
-def create_service(credentials) -> Resource:
-    """Create Gmail API service."""
-    return build('gmail', 'v1', credentials=credentials)
-
-def send_message(service: Resource, to: str, subject: str, body: str) -> str:
-    """Send message, return message ID."""
-    message = create_mime_message(to, subject, body)
-    result = service.users().messages().send(userId='me', body=message).execute()
-    return result['id']
-
-# Compose them together
-def send_email_authenticated(
-    credentials_file: str,
-    token_file: str,
-    to: str,
-    subject: str,
-    body: str
-) -> str:
-    """Compose smaller functions to build complete workflow."""
-    credentials = create_credentials(credentials_file, token_file, ['gmail.send'])
-    service = create_service(credentials)
-    message_id = send_message(service, to, subject, body)
-    return message_id
+    # Computed
+    has_attachments: bool
+    datetime_utc: datetime
+    date_formatted: str       # "YYYY-MM-DD HH:MM"
 ```
-
-## Important Notes
-
-- Never commit Gmail credentials (`credentials.json`) or tokens (`token.json`) to the repository
-- All Gmail API calls should handle rate limits and quota errors gracefully
-- Functions should return structured data (Pydantic models preferred) rather than raw API responses
-- Include retry logic for transient failures in separate, composable retry functions
-- All public functions must have complete type hints (parameters and return types)
-- Dependencies (like `Resource` service objects) must always be passed as parameters, never as globals
-- Keep functions pure when possible - no hidden side effects or mutable state
-- Message IDs and Thread IDs are strings, not integers
-- Always use `userId='me'` for the authenticated user's mailbox
-
-## Gmail API Scopes
-
-Choose minimal scopes needed for your operations:
-- `gmail.readonly` - Read all messages, labels, and settings
-- `gmail.send` - Send messages only
-- `gmail.modify` - Read, write, and modify (but not delete) messages
-- `gmail.compose` - Create, read, update, and send drafts
-- `gmail.labels` - Manage mailbox labels
-- Full scope list: https://developers.google.com/gmail/api/auth/scopes
 
 ## Testing Strategy
 
-- Mock all Gmail API service calls (never call real Gmail API in tests)
-- Use `unittest.mock.Mock` to create mock service objects
-- Test edge cases: empty responses, rate limits, network errors
-- Verify base64url encoding/decoding correctness
-- Test MIME message construction with various content types
+- Mock Gmail API service calls (never call real API in tests)
+- Test pagination with mock `nextPageToken`
+- Test MIME parsing with various message structures
+- Test FTS5 queries in SQLite
+- Test incremental sync logic
+
+## Common Tasks
+
+### Add New CLI Command
+
+```python
+@main.command("newcmd")
+@click.argument("arg")
+@click.option("--opt", help="Description")
+def new_command(arg: str, opt: str | None) -> None:
+    """Command description."""
+    credentials_file, token_file = get_credentials_paths()
+    service = create_service(credentials_file, token_file)
+    # ... implementation
+```
+
+### Add New Message Field
+
+1. Update `GmailMessage` in `types.py`
+2. Extract in `get_message()` in `messages.py`
+3. Update database schema in `database.py`
+4. Update `insert_email()` to store the field
+
+### Support New Export Format
+
+Add to `export_emails()` in `cli.py`:
+
+```python
+elif output_format == "newformat":
+    # Format the data
+    with open(output_path, "w") as f:
+        f.write(formatted_data)
+```
+
+## Security Notes
+
+- `credentials.json` and `token.json` are in `.gitignore`
+- Unverified OAuth apps require test user approval
+- Local cache in `~/.mailer/` contains full email content
+- SQLite database is unencrypted
+
+## Gmail API Scopes Used
+
+```python
+SCOPES = [
+    "https://www.googleapis.com/auth/gmail.readonly",
+    "https://www.googleapis.com/auth/gmail.send",
+    "https://www.googleapis.com/auth/gmail.modify",
+]
+```
+
+## Resources
+
+- [Gmail API Reference](https://developers.google.com/gmail/api/reference/rest)
+- [Gmail Search Syntax](https://support.google.com/mail/answer/7190)
+- [OAuth 2.0 Scopes](https://developers.google.com/gmail/api/auth/scopes)

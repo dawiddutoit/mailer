@@ -14,7 +14,17 @@ dependencies = [
     "google-api-python-client>=2.156.0",
     "pydantic>=2.10.3",
     "python-dotenv>=1.2.1",
+    "click>=8.1.0",
+    "rich>=13.0.0",
+    "mail-parser>=3.15.0",
+    "email-reply-parser>=0.5.12",
 ]
+
+[project.urls]
+"Buy Me a Coffee" = "https://buymeacoffee.com/dawiddutoih"
+
+[project.scripts]
+mailer = "mailer.cli:main"
 
 [tool.setuptools.package-data]
 mailer = ["py.typed"]
