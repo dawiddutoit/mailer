@@ -14,23 +14,79 @@ A functional Python library and CLI for interacting with Gmail. Designed for AI 
 - **Export Formats** - JSON, JSONL, CSV output formats
 - **Functional Design** - Pure functions, explicit dependencies, type-safe
 
-## Claude Code Integration
+## AI Tooling & Claude Code Integration
 
-This project ships with [Claude Code](https://docs.anthropic.com/en/docs/claude-code) skills that help AI agents use the mailer CLI effectively. When you open this project in Claude Code, the skills are loaded automatically.
+This project is built as an **AI-agent-first tool** -- it ships with [Claude Code](https://docs.anthropic.com/en/docs/claude-code) skills that teach AI agents how to use the mailer CLI effectively, with zero manual explanation needed.
 
-### Included Skills
+### What Are Skills?
 
-| Skill | What It Does |
-|-------|-------------|
-| **mailer-cli** | Complete CLI reference -- inbox, search, send, labels, drafts, attachments, analysis commands, Gmail search syntax |
+Skills are structured knowledge files (`.claude/skills/SKILL.md`) that give Claude Code deep context about a tool's commands, patterns, and best practices. Instead of you explaining "how to search emails", the skill teaches Claude automatically. Skills activate on trigger phrases -- just ask naturally and Claude knows what to do.
 
 ### Setup
 
-1. Clone this repository
-2. Install [Claude Code](https://docs.anthropic.com/en/docs/claude-code)
-3. Open the project directory in Claude Code
+1. Install `mailer` globally (see [Installation](#installation) below)
+2. Set up Gmail API credentials (see [Quick Start](#quick-start) below)
+3. Copy the skill to your Claude Code skills directory:
+   ```bash
+   cp -r .claude/skills/mailer-cli ~/.claude/skills/
+   ```
+4. Open any project in Claude Code and start asking about email
 
-Skills are stored in `.claude/skills/` and loaded automatically. Claude Code will know how to read your inbox, search emails, send messages, manage labels/drafts, and analyze email patterns without needing detailed instructions.
+### Included Skills
+
+| Skill | Trigger Phrases | What It Does |
+|-------|----------------|-------------|
+| **mailer-cli** | "check email", "search inbox", "send email", "download attachments", "unread emails", "gmail" | Complete CLI reference -- inbox, search, send, labels, drafts, attachments, analysis commands, and Gmail search syntax |
+
+### Example Prompts
+
+Once the skill is loaded, you can ask Claude Code things like:
+
+```
+# Reading emails
+"Show me my unread emails"
+"Find all emails from @company.com with attachments"
+"Search for emails about invoices from last month"
+
+# Sending
+"Send an email to bob@example.com about the meeting tomorrow"
+"Draft a reply to the last email from Alice"
+
+# Attachments
+"Download the PDF attachments from the latest email from finance@company.com"
+
+# Analysis
+"Who sends me the most email?"
+"Show me email volume by month"
+
+# Database & search
+"Search my local email database for 'contract renewal'"
+"How many emails do I have cached locally?"
+```
+
+### How It Works Under the Hood
+
+1. **You ask naturally** -- "find emails from boss about quarterly review"
+2. **Claude Code activates the skill** -- the `mailer-cli` skill matches on email-related triggers
+3. **Claude runs the right CLI command** -- e.g., `mailer search "from:boss subject:quarterly review"`
+4. **Results are returned in context** -- Claude can then summarize, filter, or take action on the results
+
+### Tips for Best Results
+
+- **Be specific about senders/subjects** -- "emails from @acme.com about invoices" works better than "find some emails"
+- **Use date ranges** -- "emails from last week" triggers Gmail's `after:` syntax
+- **Chain operations** -- "find the latest invoice from billing@company.com and download its attachments"
+- **Use the database for bulk analysis** -- "import all cached emails and show me sender statistics"
+- **The CLI is globally installed** -- Claude will call `mailer` directly, no `uv run` needed
+
+### For AI Agent Developers
+
+If you're building agents or automation workflows that need email access:
+
+1. **CLI-first**: Use `mailer` CLI commands via subprocess -- they return structured output (`--format json`)
+2. **Python API**: Import from `mailer` package for programmatic access (see [Python API](#python-api))
+3. **Local caching**: Fetch once, query many times -- `mailer get emails` + `mailer db search`
+4. **Structured output**: All commands support `--format json`, `--format jsonl`, `--format csv` for machine parsing
 
 ## Installation
 

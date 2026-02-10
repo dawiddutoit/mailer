@@ -42,33 +42,12 @@ mailer db stats                           # View database statistics
 
 A Python library and CLI for AI agents to interact with Gmail. Features local caching, SQLite storage with full-text search, and incremental sync.
 
-## Claude Code Skills
+## Skills
 
-This project ships with Claude Code skills in `.claude/skills/` that help AI agents use the mailer CLI effectively with minimal back-and-forth. Skills are automatically available when Claude Code runs in this project directory.
-
-### Available Skills
-
-| Skill | Purpose | When It Activates |
-|-------|---------|-------------------|
-| **mailer-cli** | Complete CLI reference with commands, Gmail search syntax, workflows | "check email", "search inbox", "send email", "download attachments" |
-
-### Skill Structure
-
-```
-.claude/skills/
-└── mailer-cli/
-    ├── SKILL.md                   # Main skill with quick reference
-    └── references/
-        └── cli-reference.md       # Complete command reference
-```
-
-### How Users Get Skills
-
-Skills are part of the repository. When a user clones the project and opens it with Claude Code, the skills are automatically loaded from `.claude/skills/`. No manual installation needed.
-
-## Skill
-
-Use `mailer-codebase-understanding` when reasoning about architecture, implementing features, or debugging.
+| Skill | Purpose |
+|-------|---------|
+| **mailer-cli** | CLI commands, Gmail search syntax, workflows |
+| **mailer-codebase-understanding** | Architecture reasoning, feature implementation, debugging |
 
 ## Quick Reference
 
@@ -194,23 +173,7 @@ mailer/
 
 ### 2. Pagination Handling
 
-Gmail API returns max 500 messages per request. `list_message_ids()` handles this:
-
-```python
-def list_message_ids(service, max_results=100, query=None) -> list[str]:
-    all_ids = []
-    page_token = None
-    while True:
-        results = service.users().messages().list(
-            userId="me", maxResults=min(max_results, 500),
-            q=query, pageToken=page_token
-        ).execute()
-        all_ids.extend(msg["id"] for msg in results.get("messages", []))
-        page_token = results.get("nextPageToken")
-        if not page_token or (max_results > 0 and len(all_ids) >= max_results):
-            break
-    return all_ids[:max_results] if max_results > 0 else all_ids
-```
+Gmail API returns max 500 messages per request. `list_message_ids()` handles automatic pagination with `nextPageToken`.
 
 ### 3. Body Extraction
 
@@ -228,21 +191,7 @@ multipart/mixed
 
 ### 4. Attachment Handling
 
-Attachments are NOT downloaded by default (bandwidth). Only metadata is extracted:
-
-```python
-class GmailAttachment:
-    attachment_id: str    # For download API
-    message_id: str       # Parent message
-    filename: str
-    mime_type: str
-    size: int
-```
-
-Download on demand:
-```python
-data = download_attachment(service, message_id, attachment_id)
-```
+Attachments are NOT downloaded by default (bandwidth). Only metadata (`attachment_id`, `filename`, `mime_type`, `size`) is extracted. Use `download_attachment()` for on-demand download.
 
 ### 5. Export Directory
 
@@ -292,33 +241,6 @@ mailer
     └── timeline             # Volume over time
 ```
 
-## Pydantic Models
-
-### GmailMessage
-
-```python
-class GmailMessage(BaseModel):
-    id: str
-    thread_id: str
-    label_ids: list[str]
-    snippet: str
-    from_email: str           # "Name <email>"
-    to: list[str]
-    cc: list[str]
-    subject: str
-    body: str                 # Plain text
-    body_html: str            # HTML version
-    date: str                 # RFC 2822
-    timestamp: int            # Unix ms (from internalDate)
-    attachments: list[GmailAttachment]
-    size_estimate: int
-
-    # Computed
-    has_attachments: bool
-    datetime_utc: datetime
-    date_formatted: str       # "YYYY-MM-DD HH:MM"
-```
-
 ## Testing Strategy
 
 - Mock Gmail API service calls (never call real API in tests)
@@ -330,35 +252,16 @@ class GmailMessage(BaseModel):
 ## Common Tasks
 
 ### Add New CLI Command
-
-```python
-@main.command("newcmd")
-@click.argument("arg")
-@click.option("--opt", help="Description")
-def new_command(arg: str, opt: str | None) -> None:
-    """Command description."""
-    credentials_file, token_file = get_credentials_paths()
-    service = create_service(credentials_file, token_file)
-    # ... implementation
-```
+Add a new `@main.command()` in `cli.py` using Click decorators. Use `get_credentials_paths()` and `create_service()` for Gmail auth.
 
 ### Add New Message Field
-
 1. Update `GmailMessage` in `types.py`
 2. Extract in `get_message()` in `messages.py`
 3. Update database schema in `database.py`
 4. Update `insert_email()` to store the field
 
 ### Support New Export Format
-
-Add to `export_emails()` in `cli.py`:
-
-```python
-elif output_format == "newformat":
-    # Format the data
-    with open(output_path, "w") as f:
-        f.write(formatted_data)
-```
+Add a new format branch in `export_emails()` in `cli.py`.
 
 ## Security Notes
 
